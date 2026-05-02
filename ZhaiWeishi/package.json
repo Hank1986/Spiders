@@ -1,0 +1,27 @@
+{
+  "name": "zhaiweishi-export",
+  "version": "1.0.0",
+  "description": "Export case details to Excel using existing axios helpers.",
+  "type": "module",
+  "main": "exportCases.js",
+  "scripts": {
+    "start": "node exportCases.js"
+  },
+  "keywords": [
+    "export",
+    "cases",
+    "excel",
+    "axios"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "crypto-js": "^4.2.0",
+    "js-base64": "^3.7.7",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "case-data-exporter",
+  "version": "1.0.0",
+  "description": "Application to fetch case data from APIs and export to Excel",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "export_chengrui": "node index.js --company=chengrui",
+    "export_xinge": "node index.js --company=xinge",
+    "export_chengyu": "node index.js --company=chengyu 2>&1 | tee chengyu_debug.log"
+  },
+  "dependencies": {
+    "axios": "0.19.2",
+    "crypto-js": "4.2.0",
+    "dotenv": "^16.3.1",
+    "js-base64": "3.7.8",
+    "xlsx": "^0.18.5"
+  }
+}

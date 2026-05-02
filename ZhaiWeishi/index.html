@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZhaiWeiShi Export</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 2rem; }
+    button { padding: 0.6rem 1rem; font-size: 1rem; }
+    #log { margin-top: 1rem; white-space: pre-wrap; background: #f7f7f7; border: 1px solid #ddd; padding: 1rem; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "axios": "https://esm.sh/axios@1.7.7",
+        "xlsx": "https://esm.sh/xlsx@0.18.5",
+        "crypto-js": "https://esm.sh/crypto-js@4.2.0",
+        "js-base64": "https://esm.sh/js-base64@3.7.7"
+      }
+    }
+  </script>
+</head>
+<body>
+  <h1>Export Cases to Excel</h1>
+  <p>Click the button to login, fetch cases and details, and export to an Excel file.</p>
+  <button id="exportBtn">Export Cases</button>
+  <div id="log"></div>
+
+  <script type="module"></script>
+    import { runExport } from './exportCases.js';
+
+    const btn = document.getElementById('exportBtn');
+    const logEl = document.getElementById('log');
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${msg}\n`;
+    }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      log('Starting export...');
+      try {
+        const result = await runExport({ perPage: 50, filename: 'cases.xlsx' });
+        log(`Export finished. Rows: ${result.count}`);
+        alert('Export completed.');
+      } catch (e) {
+        console.error(e);
+        log(`Export failed: ${e?.message || e}`);
+        alert(`Export failed: ${e?.message || e}`);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

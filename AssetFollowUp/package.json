@@ -1,0 +1,14 @@
+{
+  "name": "asset-followup-spider",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js",
+    "export": "node src/export.js"
+  },
+  "dependencies": {
+    "playwright": "^1.47.2",
+    "csv-writer": "^1.6.0"
+  }
+}
