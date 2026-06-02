@@ -35,7 +35,9 @@ import argparse
 import base64
 import json
 import os
+import random
 import re
+import string
 import subprocess
 import sys
 import time
@@ -44,16 +46,27 @@ from pathlib import Path
 from typing import Tuple
 
 import requests
+from Crypto.Cipher import AES, PKCS1_v1_5
+from Crypto.PublicKey import RSA
+from Crypto.Util.Padding import pad
 
 SCRIPT_DIR = Path(__file__).parent
 BASE_URL = "http://120.55.38.129:9999"
 
-# OAuth2 client credentials (BladeX default "saber" client)
+# OAuth2 client credentials (from frontend JS: saber / wclw_sercet)
 _CLIENT_ID     = "saber"
-_CLIENT_SECRET = "saber_secret"
+_CLIENT_SECRET = "wclw_sercet"
 _BASIC_AUTH    = base64.b64encode(
     f"{_CLIENT_ID}:{_CLIENT_SECRET}".encode()
 ).decode()
+
+# RSA public key embedded in the frontend JS for encrypting the AES key
+_RSA_PUBKEY_B64 = (
+    "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCE66++2AZIZhbvwWcN+YqpNb8v"
+    "X6R+hp9HiM/jwJjYGIC0tQbuWdeeh4FUHhKly65bxK0ysASzH2rvuRnWURPXc9rC"
+    "ZqTbD7gPYWK/FaTjRtNku0Xlg4BeWvOsoIGNkWKZxrOH7fKcaG4FZtvekDyVINOM"
+    "67h1yAM1vX6/cnn7swIDAQAB"
+)
 
 # ── defaults (env overrides, then CLI args override env) ─────────────────────
 DEFAULT_TENANT   = os.getenv("WANCUN_TENANT",   "133253")
@@ -64,6 +77,59 @@ MAX_RETRIES      = 10
 
 class LoginError(Exception):
     pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AES + RSA encryption (matches the frontend crypto module)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _gen_aes_key(length: int = 16) -> str:
+    """Generate a random alphanumeric key (mirrors the frontend's genKey)."""
+    chars = string.ascii_letters + string.digits
+    return "".join(random.choice(chars) for _ in range(length))
+
+
+def _aes_encrypt(plaintext: str, key: str) -> str:
+    """
+    AES-ECB encrypt with PKCS7 padding, return base64-encoded ciphertext.
+    Mirrors the frontend's CryptoJS.AES.encrypt(..., {mode: ECB, padding: Pkcs7}).
+    """
+    cipher = AES.new(key.encode("utf-8"), AES.MODE_ECB)
+    padded = pad(plaintext.encode("utf-8"), AES.block_size)
+    ciphertext = cipher.encrypt(padded)
+    return base64.b64encode(ciphertext).decode("utf-8")
+
+
+def _rsa_encrypt(plaintext: str, pubkey_b64: str) -> str:
+    """
+    RSA encrypt with PKCS1v1.5 padding, return base64-encoded ciphertext.
+    Mirrors the frontend's JSEncrypt.encrypt() which outputs Base64.
+
+    IMPORTANT: The frontend's o.encrypt() calls JSON.stringify() on the
+    plaintext before encryption, so we must do the same here.
+    """
+    # JSON.stringify the plaintext — adds surrounding quotes: "key" → '"key"'
+    jsonified = json.dumps(plaintext)
+    der = base64.b64decode(pubkey_b64)
+    pubkey = RSA.import_key(der)
+    cipher = PKCS1_v1_5.new(pubkey)
+    ciphertext = cipher.encrypt(jsonified.encode("utf-8"))
+    return base64.b64encode(ciphertext).decode("utf-8")
+
+
+def encrypt_payload(data: dict) -> dict:
+    """
+    Encrypt a login payload the same way the frontend does:
+      1. Generate a random 16-char AES key
+      2. AES-ECB encrypt the JSON-serialised data with that key → base64
+      3. RSA encrypt the AES key (JSON-stringified) with the embedded public key → base64
+      4. Return {"data": "<aes-ciphertext>", "aesKey": "<rsa-ciphertext>"}
+    """
+    aes_key = _gen_aes_key()
+    json_str = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    encrypted_data = _aes_encrypt(json_str, aes_key)
+    encrypted_key = _rsa_encrypt(aes_key, _RSA_PUBKEY_B64)
+    return {"data": encrypted_data, "aesKey": encrypted_key}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -165,13 +231,14 @@ def do_login(
 ) -> str:
     """
     POST /api/blade-auth/oauth/token
-    - Credentials go as query-string params (BladeX standard)
-    - OAuth2 client sent as Authorization: Basic saber:saber_secret
-    - CAPTCHA key/code sent as custom headers Captcha-Key / Captcha-Code
+    - The login payload is AES+RSA encrypted (matching the frontend crypto).
+    - OAuth2 client sent as Authorization: Basic saber:wclw_sercet
+    - CAPTCHA key/code sent as request headers (Captcha-Key / Captcha-Code)
+    - Tenant-Id sent as request header
     Returns the raw access_token string on success.
     Raises LoginError on failure.
     """
-    params = {
+    plain_payload = {
         "tenantId":   tenant,
         "username":   username,
         "password":   password,
@@ -179,15 +246,17 @@ def do_login(
         "scope":      "all",
         "type":       "account",
     }
+    encrypted_payload = encrypt_payload(plain_payload)
     headers = {
         "Authorization": f"Basic {_BASIC_AUTH}",
         "Captcha-Key":   captcha_key,
         "Captcha-Code":  captcha_code,
+        "Tenant-Id":      tenant,
     }
 
     resp = requests.post(
         f"{BASE_URL}/api/blade-auth/oauth/token",
-        params=params,
+        json=encrypted_payload,
         headers=headers,
         timeout=15,
     )
